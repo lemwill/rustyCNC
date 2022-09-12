@@ -23,7 +23,7 @@ impl Segment {
     }
 
     pub fn length(&self) -> f32 {
-        let coordinates_diff = &self.stop - &self.start;
+        let coordinates_diff = self.stop - self.start;
         let length = (coordinates_diff.x.powi(2) + coordinates_diff.y.powi(2) + coordinates_diff.z.powi(2)).sqrt();
         return length;
     }

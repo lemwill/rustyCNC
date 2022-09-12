@@ -1,5 +1,5 @@
 [package]
-name = "rustyCNC"
+name = "rusty_cnc"
 version = "0.1.0"
 edition = "2021"
 
