@@ -6,31 +6,31 @@ use std::ops::Add;
 use std::ops::Mul;
 
 #[derive(Clone, Copy)]
-pub struct Coordinates {
+pub struct Vector {
     pub x: f32,
     pub y: f32,
     pub z: f32,
 }
 
-impl Coordinates {
+impl Vector {
     pub fn length(&self) -> f32 {
         let length = (self.x.powi(2) + self.y.powi(2) + self.z.powi(2)).sqrt();
         return length;
     }
 }
 
-impl fmt::Display for Coordinates {
+impl fmt::Display for Vector {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "({}, {}, {})", self.x, self.y, self.z)
     }
 }
 
 
-impl Sub for Coordinates {
-    type Output = Coordinates;
+impl Sub for Vector {
+    type Output = Vector;
 
-    fn sub(self, other: Coordinates) -> Coordinates {
-        Coordinates {
+    fn sub(self, other: Vector) -> Vector {
+        Vector {
             x: self.x - other.x,
             y: self.y - other.y,
             z: self.z - other.z,
@@ -39,11 +39,11 @@ impl Sub for Coordinates {
     
 }
 
-impl Add for Coordinates {
-    type Output = Coordinates;
+impl Add for Vector {
+    type Output = Vector;
 
-    fn add(self, other: Coordinates) -> Coordinates {
-        Coordinates {
+    fn add(self, other: Vector) -> Vector {
+        Vector {
             x: self.x + other.x,
             y: self.y + other.y,
             z: self.z + other.z,
@@ -51,11 +51,11 @@ impl Add for Coordinates {
     }
 }
 
-impl Div<f32> for Coordinates {
-    type Output = Coordinates;
+impl Div<f32> for Vector {
+    type Output = Vector;
 
-    fn div(self, other: f32) -> Coordinates {
-        Coordinates {
+    fn div(self, other: f32) -> Vector {
+        Vector {
             x: self.x / other,
             y: self.y / other,
             z: self.z / other,
@@ -64,11 +64,11 @@ impl Div<f32> for Coordinates {
 }
 
 
-impl Mul<f32> for Coordinates {
-    type Output = Coordinates;
+impl Mul<f32> for Vector {
+    type Output = Vector;
 
-    fn mul(self, other: f32) -> Coordinates {
-        Coordinates {
+    fn mul(self, other: f32) -> Vector {
+        Vector {
             x: self.x * other,
             y: self.y * other,
             z: self.z * other,
