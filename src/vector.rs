@@ -1,9 +1,8 @@
-
 use std::fmt;
-use std::ops::Div;
-use std::ops::Sub;
 use std::ops::Add;
+use std::ops::Div;
 use std::ops::Mul;
+use std::ops::Sub;
 
 #[derive(Clone, Copy)]
 pub struct Vector {
@@ -17,6 +16,28 @@ impl Vector {
         let length = (self.x.powi(2) + self.y.powi(2) + self.z.powi(2)).sqrt();
         return length;
     }
+
+    pub fn dot(&self, other: Vector) -> f32 {
+        let dot = self.x * other.x + self.y * other.y + self.z * other.z;
+        return dot;
+    }
+
+    pub fn angle_with(&self, other: Vector) -> f32 {
+        let mut angle = self.dot(other) / (self.length() * other.length());
+        // Fix rounding error
+        if angle < -1.0 {
+            angle = -1.0;
+        } else if angle > 1.0 {
+            angle = 1.0;
+        }
+        return f32::acos(angle);
+    }
+}
+
+impl Default for Vector {
+    fn default() -> Self {
+        Vector { x: 0.0, y: 0.0, z: 0.0 }
+    }
 }
 
 impl fmt::Display for Vector {
@@ -24,7 +45,6 @@ impl fmt::Display for Vector {
         write!(f, "({}, {}, {})", self.x, self.y, self.z)
     }
 }
-
 
 impl Sub for Vector {
     type Output = Vector;
@@ -36,7 +56,6 @@ impl Sub for Vector {
             z: self.z - other.z,
         }
     }
-    
 }
 
 impl Add for Vector {
@@ -62,7 +81,6 @@ impl Div<f32> for Vector {
         }
     }
 }
-
 
 impl Mul<f32> for Vector {
     type Output = Vector;
