@@ -32,6 +32,18 @@ impl Vector {
         }
         return f32::acos(angle);
     }
+
+    pub(crate) fn rotate_90_degrees(&self, clockwise: bool) -> Vector {
+        let mut new_vector = Vector::default();
+        if clockwise {
+            new_vector.x = -self.y;
+            new_vector.y = self.x;
+        } else {
+            new_vector.x = self.y;
+            new_vector.y = -self.x;
+        }
+        return new_vector;
+    }
 }
 
 impl Default for Vector {
@@ -42,7 +54,7 @@ impl Default for Vector {
 
 impl fmt::Display for Vector {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "({}, {}, {})", self.x, self.y, self.z)
+        write!(f, "({:5}, {:5}, {:5})", self.x, self.y, self.z)
     }
 }
 

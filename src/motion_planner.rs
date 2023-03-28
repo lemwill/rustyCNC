@@ -1,7 +1,10 @@
+use crate::linear_movement::LinearMovement;
 use crate::machine_configuration::MachineConfiguration;
-use crate::movement::LinearMovement;
 use crate::vector::Vector;
 use std::collections::VecDeque;
+
+// Import min macro from utilities crate
+use crate::utilities;
 
 pub struct MotionPlanner {
     //current_position: Vector,
@@ -18,12 +21,25 @@ impl MotionPlanner {
         }
     }
 
-    // Explained here: https://onehossshay.wordpress.com/2011/09/24/improving_grbl_cornering_algorithm/
     fn calculate_radius(&mut self, angle: f32) -> f32 {
         let radius = self.machine_configuration.path_deviation_tolerance * f32::sin(angle / 2.0) / (1.0 - f32::sin(angle / 2.0));
         return radius;
     }
 
+    // Explained here: https://onehossshay.wordpress.com/2011/09/24/improving_grbl_cornering_algorithm/
+    // Compute maximum allowable entry speed at junction by centripetal acceleration approximation. (From GRBLHAL)
+    // Let a circle be tangent to both previous and current path line segments, where the junction
+    // deviation is defined as the distance from the junction to the closest edge of the circle,
+    // colinear with the circle center. The circular segment joining the two paths represents the
+    // path of centripetal acceleration. Solve for max velocity based on max acceleration about the
+    // radius of the circle, defined indirectly by junction deviation. This approach does not actually deviate
+    // from path, but used as a robust way to compute cornering speeds, as it takes into account the
+    // nonlinearities of both the junction angle and junction velocity.
+    //
+    // NOTE: The max junction speed is a fixed value, since machine acceleration limits cannot be
+    // changed dynamically during operation nor can the line move geometry. This must be kept in
+    // memory in the event of a feedrate override changing the nominal speeds of blocks, which can
+    // change the overall maximum entry speed conditions of all blocks.
     fn get_max_cornering_velocity(&mut self, move_a: Vector, move_b: Vector) -> f32 {
         let angle = std::f32::consts::PI - move_a.angle_with(move_b);
 
@@ -40,16 +56,39 @@ impl MotionPlanner {
         return max_cornering_velocity;
     }
 
-    pub fn get_next(&mut self, index: usize) -> Option<LinearMovement> {
+    fn get_previous_current_and_next_move(&mut self, index: usize) -> Option<(LinearMovement, LinearMovement, LinearMovement)> {
+        let previous_move;
+
+        if index == 0 {
+            previous_move = LinearMovement {
+                end_position: Vector { x: 0.0, y: 0.0, z: 0.0 },
+                start_feedrate: 0.0,
+                target_feedrate: 0.0,
+                end_feedrate: 0.0,
+            };
+        } else if let Some(item_previous) = self.target_queue.get(index - 1) {
+            previous_move = *item_previous;
+        } else {
+            return None;
+        }
+
+        // Get the current move
+        let current_move: LinearMovement;
+        if let Some(item_current) = self.target_queue.get(index) {
+            current_move = *item_current;
+        } else {
+            return None;
+        }
+
         // Set the next target position while taking into account the special case of the last move
         let mut next_move = LinearMovement {
-            target_position: (Vector { x: 0.0, y: 0.0, z: 0.0 }),
+            end_position: (Vector { x: 0.0, y: 0.0, z: 0.0 }),
             start_feedrate: (0.0),
             target_feedrate: (0.0),
             end_feedrate: (0.0),
         };
         if index + 1 >= self.target_queue.len() {
-            next_move.target_position = Vector { x: 0.0, y: 0.0, z: 0.0 };
+            next_move.end_position = Vector { x: 0.0, y: 0.0, z: 0.0 };
             next_move.target_feedrate = 0.0;
             next_move.start_feedrate = 0.0;
         } else {
@@ -60,39 +99,40 @@ impl MotionPlanner {
                 return None;
             }
         }
-        return Some(next_move);
+        return Some((previous_move, current_move, next_move));
+    }
+
+    pub fn set_start_feedrate(&mut self, index: usize, feedrate: f32) {
+        let current_move_mut = self.target_queue.get_mut(index).unwrap();
+        current_move_mut.start_feedrate = feedrate;
+        println!(
+            "Reduced start feedrate from {:6.3} to {:6.3}. Recalculating. ",
+            current_move_mut.start_feedrate, feedrate
+        );
+    }
+
+    pub fn set_end_feedrate(&mut self, index: usize, feedrate: f32) {
+        let current_move_mut = self.target_queue.get_mut(index).unwrap();
+        current_move_mut.end_feedrate = feedrate;
+
+        let next_move_mut = self.target_queue.get_mut(index + 1).unwrap();
+        next_move_mut.start_feedrate = feedrate;
+        println!(
+            "Changed next start feedrate from {:6.3} to {:6.3}. Stepping to next.",
+            next_move_mut.start_feedrate, feedrate
+        );
     }
 
     pub fn traverse(&mut self, index: usize) {
-        // Set previous position while taking into account the special case of the first move
-        let previous_position: Vector;
-        if index == 0 {
-            previous_position = Vector { x: 0.0, y: 0.0, z: 0.0 };
-        } else if let Some(item_previous) = self.target_queue.get(index - 1) {
-            previous_position = item_previous.target_position;
-        } else {
-            return;
-        }
-
-        // Get the current move
-        let current_move: LinearMovement;
-        if let Some(item_current) = self.target_queue.get(index) {
-            current_move = *item_current;
-        } else {
-            return;
-        }
-
-        // Set the next target position while taking into account the special case of the last move
-        let next_move: LinearMovement;
-        if let Some(item_current) = self.get_next(index) {
-            next_move = item_current;
-        } else {
-            return;
-        }
+        // Get the previous, current and next move
+        let (previous_move, current_move, next_move) = match self.get_previous_current_and_next_move(index) {
+            Some((previous_move, current_move, next_move)) => (previous_move, current_move, next_move),
+            None => return,
+        };
 
         // Calculate the vectors for the current and next move
-        let current_move_vector = current_move.target_position - previous_position;
-        let next_move_vector = next_move.target_position - current_move.target_position;
+        let current_move_vector = current_move.end_position - previous_move.end_position;
+        let next_move_vector = next_move.end_position - current_move.end_position;
 
         // Calculate the maximum velocity at the corner
         let max_corner_velocity = self.get_max_cornering_velocity(current_move_vector, next_move_vector);
@@ -102,27 +142,30 @@ impl MotionPlanner {
         // v2 is the final speed, u2 the initial speed
         let v_initial = current_move.start_feedrate;
         let distance = current_move_vector.length();
-        let acceleration = self.machine_configuration.get_max_acceleration(current_move.target_position);
+        let acceleration = self.machine_configuration.get_max_acceleration(current_move_vector);
         let max_end_feedrate = f32::sqrt(f32::powi(v_initial, 2) + acceleration * distance);
 
         // Calculate the maximum velocity at the end of the current move
-        let mut max_junction_velocity = current_move.target_feedrate;
-        max_junction_velocity = f32::min(max_junction_velocity, next_move.start_feedrate);
-        max_junction_velocity = f32::min(max_junction_velocity, next_move.target_feedrate);
-        max_junction_velocity = f32::min(max_junction_velocity, max_corner_velocity);
-        max_junction_velocity = f32::min(max_junction_velocity, max_end_feedrate);
+        let max_junction_velocity = utilities::min!(
+            current_move.target_feedrate,
+            next_move.start_feedrate,
+            max_corner_velocity,
+            max_end_feedrate
+        );
+
+        // 1. Calculate corner feedrate
 
         // Calculate the maximum velocity at the start of the next move
-        // v2 = u2 + 2ad
+        // v2 = v_0^2 + 2ad
         // v2 is the final speed, u2 the innitial speed and
         let v_initial = max_junction_velocity;
         let distance = current_move_vector.length();
-        let acceleration = self.machine_configuration.get_max_acceleration(current_move.target_position);
+        let acceleration = self.machine_configuration.get_max_acceleration(current_move.end_position);
         let max_start_feedrate = f32::sqrt(f32::powi(v_initial, 2) + acceleration * distance);
 
         // Print debug information
         print!(
-            "[{}] Corner feedrate {:5.3} (end: {:5.3}, target: {:5.3}, max {:5.3}, next target {:5.3}, cornering {:5.3}). ",
+            "[{}] Corner feedrate {:6.3} (end: {:6.3}, target: {:6.3}, max {:6.3}, next target {:6.3}, cornering {:6.3}). ",
             index,
             max_junction_velocity,
             next_move.start_feedrate,
@@ -134,27 +177,14 @@ impl MotionPlanner {
 
         // Lookahead buffer
         if max_start_feedrate < current_move.start_feedrate {
-            let current_move_mut = self.target_queue.get_mut(index).unwrap();
-            current_move_mut.start_feedrate = max_start_feedrate;
-            println!(
-                "Reduced start feedrate from {:5.3} to {:5.3}. Recalculating. ",
-                current_move.start_feedrate, max_start_feedrate
-            );
+            self.set_start_feedrate(index, max_start_feedrate);
             self.traverse(index - 1);
             return;
         }
 
         // Store end velocity
         if index + 1 < self.target_queue.len() {
-            let next_move_mut = self.target_queue.get_mut(index + 1).unwrap();
-            next_move_mut.start_feedrate = max_junction_velocity;
-            let current_move_mut = self.target_queue.get_mut(index).unwrap();
-            current_move_mut.end_feedrate = max_junction_velocity;
-
-            println!(
-                "Changed next start feedrate from {:5.3} to {:5.3}. Stepping to next.",
-                next_move.start_feedrate, max_junction_velocity
-            );
+            self.set_end_feedrate(index, max_junction_velocity);
             self.traverse(index + 1);
         } else {
             println!("");
@@ -180,10 +210,17 @@ impl MotionPlanner {
 
     pub fn calculate_feedrate_profile(&mut self) {
         println!("Calculating motion profile.");
+
+        let mut current_position = Vector { x: 0.0, y: 0.0, z: 0.0 };
+
         // Calculate the feedrate profile for each move
-        for (index, item) in self.target_queue.iter().enumerate() {
+        for (index, item) in self.target_queue.iter_mut().enumerate() {
             // Calculate the feedrate profile for the current move
-            println!("[{}] item: {}", index, item);
+            print!("[{}] item: {}. ", index, item);
+            current_position = item.calculate_acceleration_decceleration(
+                current_position,
+                self.machine_configuration.get_max_acceleration(Vector { x: 0.0, y: 0.0, z: 0.0 }),
+            );
         }
         println!("Done calculating motion profile.");
         println!("---------------------------------");

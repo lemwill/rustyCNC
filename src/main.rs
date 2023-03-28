@@ -1,5 +1,8 @@
-mod movement;
-use movement::LinearMovement;
+mod linear_movement;
+use linear_movement::LinearMovement;
+
+mod arc_movement;
+use arc_movement::ArcMovement;
 
 mod machine_configuration;
 use machine_configuration::MachineConfiguration;
@@ -11,6 +14,8 @@ mod motion_planner;
 use motion_planner::MotionPlanner;
 
 mod motor_step_generator;
+
+mod utilities;
 
 fn main() {
     let machine_configuration = MachineConfiguration {
@@ -27,7 +32,7 @@ fn main() {
         path_deviation_tolerance: 0.1,
     };
 
-    // Create the ramp profile
+    // Allow for arcs
     // Plot the feedrate
     // Integrate other types of commands
     // Integrate arcs
@@ -40,7 +45,7 @@ fn main() {
 
     //let a = LinearMovement::new(Vector { x: 10.0, y: 10.0, z: 0.0 }, 4.0);
 
-    // Straight line
+    // Straight line from (0,0,0)
     let b: LinearMovement = LinearMovement::new(Vector { x: 12.0, y: 12.0, z: 0.0 }, 10.0);
 
     // 90 degrees
@@ -48,6 +53,16 @@ fn main() {
 
     // 180 degrees
     let d: LinearMovement = LinearMovement::new(Vector { x: 0.0, y: 0.0, z: 0.0 }, 10.0);
+
+    let e: ArcMovement = ArcMovement::new(
+        Vector { x: 0.0, y: 0.0, z: 0.0 },
+        Vector { x: 0.0, y: 0.0, z: 0.0 },
+        Vector { x: 1.0, y: 0.0, z: 0.0 },
+        true,
+        10.0,
+    );
+
+    println!("Start direction: {}", e.start_direction());
 
     //motion_planner.add_target(a);
     motion_planner.add_target(b);
